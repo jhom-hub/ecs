@@ -1,7 +1,7 @@
 <div class="container-fluid py-4">
     <div class="card mb-4">
         <div class="card-header">
-            <h5 class="card-title mb-0">Data Analysis & Filtering</h5>
+            <h5 class="card-title mb-0">Data Summary Filtering</h5>
         </div>
         <div class="card-body">
             <div class="row">

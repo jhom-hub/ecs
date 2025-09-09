@@ -40,12 +40,14 @@ class CheckSheetController extends BaseController
         $orderColumn = $orderColumnMap[$order['column']] ?? 'c.checksheet_id';
 
         $ChecksheetInfoModel
-            ->select('c.checksheet_id, c.status, a.area_name, b.building_name')
+            ->select('c.checksheet_id, c.status, a.area_name, b.building_name, COUNT(DISTINCT CASE WHEN (e.priority = 1 AND e.status != 2) THEN e.checksheet_id END) AS priority_count')
             ->from('checksheet_info c')
             ->join('area a', 'c.area_id = a.area_id', 'left')
             ->join('building b', 'c.building_id = b.building_id', 'left')
             ->join('auditors d', 'd.area_id = c.area_id', 'left')
+            ->join('checksheet_data e', 'e.checksheet_id = c.checksheet_id', 'left')
             ->where('c.dri_id', $userId)
+            ->groupBy('c.checksheet_id, c.status, a.area_name, b.building_name')
             ->distinct();
 
         $totalRecords = $ChecksheetInfoModel->countAllResults(false);
@@ -66,13 +68,14 @@ class CheckSheetController extends BaseController
         $data = [];
         foreach ($records as $row) {
             $data[] = [
-                "checksheet_id"  => $row['checksheet_id'],
-                "area_name"      => htmlspecialchars($row['area_name']),
-                "building_name"  => htmlspecialchars($row['building_name']),
-                "status"         => htmlspecialchars($row['status']),
-                "actions"        => '<div class="btn-group" role="group">
-                                    <button class="btn btn-sm btn-primary" onclick="viewRequest(' . $row['checksheet_id'] . ')">View</button>
-                                </div>'
+                "checksheet_id"   => $row['checksheet_id'],
+                "area_name"       => htmlspecialchars($row['area_name']),
+                "building_name"   => htmlspecialchars($row['building_name']),
+                "status"          => htmlspecialchars($row['status']),
+                "priority_count"  => (int) $row['priority_count'],
+                "actions"         => '<div class="btn-group" role="group">
+                                        <button class="btn btn-sm btn-primary" onclick="viewRequest(' . $row['checksheet_id'] . ')">View</button>
+                                    </div>'
             ];
         }
 
@@ -272,7 +275,7 @@ class CheckSheetController extends BaseController
 
     if (!empty($dataToInsert)) {
         if ($checksheetDataModel->insertBatch($dataToInsert)) {
-            $checksheetInfoModel->update($checksheetId, ['status' => 0]);
+            $checksheetInfoModel->update($checksheetId, ['status' => 1]);
 
             // ✅ Update Area status if any NG found
             if ($hasNgStatus) {

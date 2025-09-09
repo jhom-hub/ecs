@@ -138,6 +138,7 @@ $routes->group('findings_type_maintenance', static function ($routes) {
     $routes->post('updateFindingsType', 'FindingsTypeController::updateFindingsType');
     $routes->post('deleteFindingsType/(:num)', 'FindingsTypeController::deleteFindingsType/$1');
     $routes->get('details/(:num)', 'FindingsTypeController::getFindingsTypeDetails/$1');
+    $routes->get('getItemsByArea/(:num)', 'FindingsTypeController::getItemsByArea/$1');
 });
 
 $routes->group('send_request', static function ($routes) {
@@ -179,10 +180,14 @@ $routes->group('dashboard', static function ($routes) {
     $routes->get('area-details/(:num)', 'DashboardController::getAreaDetails/$1');
     $routes->get('get_all_buildings', 'DashboardController::getAllBuildings');
     $routes->get('get_all_items', 'DashboardController::getAllItemsWithNgCount');
+    $routes->post('get-items-details', 'DashboardController::getItemsDetails');
+});
+
+$routes->group('inbox', static function ($routes) {
+    $routes->get('getHoldActivity', 'InboxController::getHoldActivity');
 });
 
 $routes->group('summary', function ($routes) {
-    // The GET '/' route that called the index() method is now removed.
     $routes->post('getSummaryData', 'SummaryDataController::getSummaryData');
 });
 

@@ -18,12 +18,25 @@
                 <div>Dashboard</div>
             </a>
         </li>
+        <li class="menu-item">
+            <a href="javascript:void(0);" class="menu-link load-page" data-page="data_summary" data-title="Data Summary">
+                <i class="menu-icon tf-icons bx bx-bar-chart-alt-2"></i>
+                <div>Data Summary</div>
+            </a>
+        </li>
 
         <?php $role = session()->get('role'); ?>
 
         <?php if ($role === 'ADMINISTRATOR' || $role === 'GA' || $role === 'DRI' || $role === 'AUDITOR'): ?>
             <li class="menu-header small text-uppercase">
                 <span class="menu-header-text">Pages</span>
+            </li>
+
+            <li class="menu-item">
+                <a href="javascript:void(0);" class="menu-link load-page" data-page="inbox" data-title="Inbox">
+                    <i class="menu-icon tf-icons bx bx-envelope"></i>
+                    <div>Inbox</div>
+                </a>
             </li>
 
             <!-- Checksheet -->
@@ -51,16 +64,6 @@
                 <a href="javascript:void(0);" class="menu-link load-page" data-page="send_request" data-title="Send Request">
                     <i class="menu-icon tf-icons bx bx-paper-plane"></i>
                     <div>Send Request</div>
-                </a>
-            </li>
-        <?php endif; ?>
-
-        <?php if ($role === 'ADMINISTRATOR' || $role === 'AUDITOR' || $role === 'GA'): ?>
-            <!-- Data Summary -->
-            <li class="menu-item">
-                <a href="javascript:void(0);" class="menu-link load-page" data-page="data_summary" data-title="Data Summary">
-                    <i class="menu-icon tf-icons bx bx-bar-chart-alt-2"></i>
-                    <div>Data Summary</div>
                 </a>
             </li>
         <?php endif; ?>

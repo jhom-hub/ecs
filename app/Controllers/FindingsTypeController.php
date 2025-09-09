@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Controllers\BaseController;
 use App\Models\FindingsTypeModel;
+use App\Models\ItemModel; // Added for the new function
 
 class FindingsTypeController extends BaseController
 {
@@ -114,7 +115,8 @@ class FindingsTypeController extends BaseController
         ]);
     }
 
-    public function getFindingsTypeDetails($id = null)
+    // **FIX:** Renamed function to match the AJAX call in the view file.
+    public function details($id = null)
     {
         $findingsTypeModel = new FindingsTypeModel();
         $finding = $findingsTypeModel
@@ -160,5 +162,18 @@ class FindingsTypeController extends BaseController
         }
         
         return $this->response->setStatusCode(404)->setJSON(['status' => 'error', 'message' => 'Finding Type not found or already deleted.']);
+    }
+
+    // **FIX:** Added the missing function to get items for the dropdown.
+    public function getItemsByArea($areaId = null)
+    {
+        if ($areaId === null) {
+            return $this->response->setStatusCode(400)->setJSON(['status' => 'error', 'message' => 'Area ID is required.']);
+        }
+
+        $itemModel = new ItemModel();
+        $items = $itemModel->where('area_id', $areaId)->orderBy('item_name', 'ASC')->findAll();
+
+        return $this->response->setJSON(['status' => 'success', 'data' => $items]);
     }
 }

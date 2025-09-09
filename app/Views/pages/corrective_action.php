@@ -1,57 +1,31 @@
 <style>
-    /* A fixed-size viewport for both images */
     .image-viewport {
         position: relative;
         width: 100%;
-        max-width: 350px; /* Max width for responsiveness */
-        height: 260px;    /* Fixed height to maintain aspect */
+        max-width: 350px;
+        height: 260px;
         border: 1px solid #dee2e6;
-        background-color: #000; /* Black background for letterboxing */
-        margin: 0 auto; /* Center the box in its column */
+        background-color: #000;
+        margin: 0 auto;
         display: flex;
         align-items: center;
         justify-content: center;
-        overflow: hidden; /* Hide magnifier overflow */
+        overflow: hidden;
     }
-
-    #actionImageContainer.placeholder {
-        cursor: pointer;
-        transition: background-color 0.2s;
-    }
-
-    #actionImageContainer.placeholder:hover {
-        background-color: #2a2a2a; /* Darker background on hover */
-    }
-
-    .image-viewport img {
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
-    }
-
-    .img-magnifier-glass {
-        position: absolute;
-        border: 3px solid #fff;
-        box-shadow: 0 0 10px rgba(0,0,0,0.5);
-        border-radius: 50%;
-        cursor: none;
-        width: 150px;
-        height: 150px;
-        display: none;
-        z-index: 1090;
-        background-repeat: no-repeat;
-        pointer-events: none;
-    }
-    
-    .comparison-arrow {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 2.5rem;
-        color: #6c757d;
+    #actionImageContainer.placeholder { cursor: pointer; transition: background-color 0.2s; }
+    #actionImageContainer.placeholder:hover { background-color: #2a2a2a; }
+    .image-viewport img { width: 100%; height: 100%; object-fit: contain; }
+    .comparison-arrow { display: flex; align-items: center; justify-content: center; font-size: 2.5rem; color: #6c757d; }
+    #magnifierWindow {
+        position: fixed; top: 20px; right: 20px; width: 400px; height: 400px;
+        border: 3px solid #fff; box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        background-repeat: no-repeat; background-color: #000;
+        display: none; z-index: 2000;
+        /* Improve performance by letting the GPU handle transformations */
+        will-change: background-position;
     }
 </style>
-
+<div id="magnifierWindow"></div>
 <div class="card">
     <div class="card-body">
         <div class="table-responsive">
@@ -113,20 +87,14 @@
                 </div>
                 </div>
 
-
                 <div class="row mt-3 g-4">
                     <div class="col-12 col-lg-7">
                         <div class="row">
                             <div class="col-12 col-md-5 mb-3 mb-md-0 text-center">
                                 <h6>Finding Image</h6>
-                                <div id="findingImageContainer" class="image-viewport">
-                                    </div>
+                                <div id="findingImageContainer" class="image-viewport"></div>
                             </div>
-
-                            <div class="col-md-2 comparison-arrow d-none d-md-flex">
-                                &#10140;
-                            </div>
-                            
+                            <div class="col-md-2 comparison-arrow d-none d-md-flex">&#10140;</div>
                             <div class="col-12 col-md-5 text-center">
                                 <h6>Action Image Preview</h6>
                                 <div id="actionImageContainer" class="image-viewport placeholder">
@@ -140,13 +108,23 @@
                         <form id="actionForm" enctype="multipart/form-data">
                             <input type="hidden" name="data_id" id="modalDataId">
                             <input type="hidden" name="item_id" id="modalItemId">
+                            <input type="hidden" name="is_hold" id="isHold" value="0">
+                            <input class="form-control" type="file" id="actionImage" name="action_image" accept="image/png, image/jpeg, image/jpg"  capture="environment" style="display: none;">
                             <div class="mb-3">
                                 <label for="actionDescription" class="form-label">Action Description</label>
                                 <textarea class="form-control" id="actionDescription" name="action_description" rows="5" required></textarea>
                             </div>
                             <div class="mb-3">
-                                <label for="actionImage" class="form-label">Upload Action Image</label>
-                                <input class="form-control" type="file" id="actionImage" name="action_image" accept="image/*" capture="environment"  required style="display: block;">
+                                <label for="closureDate" class="form-label">Declared Date of Closure</label>
+                                <div class="input-group">
+                                    <div class="input-group-text">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="holdToggle">
+                                        </div>
+                                    </div>
+                                    <input type="date" class="form-control" id="closureDate" name="closure_date" value="<?= date('Y-m-d'); ?>" disabled>
+                                </div>
+                                <div class="form-text">Toggle the switch to enable and set a future closure date.</div>
                             </div>
                         </form>
                     </div>
@@ -161,238 +139,230 @@
 </div>
 
 <script>
-    function createMagnifier(containerEl, zoom) {
-        const img = containerEl.querySelector('img');
-        if (!img) return;
+/**
+ * --- OPTIMIZED MAGNIFIER FUNCTION ---
+ * The lag is fixed by separating event listeners.
+ * `mouseenter`: Sets the background image and size ONCE.
+ * `mousemove`: EFFICIENTLY updates only the background position.
+ * `mouseleave`: Hides the magnifier.
+ * This prevents costly style recalculations on every mouse movement.
+ */
+function createMagnifier(containerEl, zoom) {
+    const img = containerEl.querySelector('img');
+    if (!img) return;
 
-        if (containerEl.magnifierInstance) {
-            containerEl.magnifierInstance.destroy();
-        }
+    const magnifier = document.getElementById("magnifierWindow");
 
-        const glass = document.createElement("DIV");
-        glass.className = 'img-magnifier-glass';
-        containerEl.appendChild(glass);
+    const getCursorPos = (e) => {
+        const rect = img.getBoundingClientRect();
+        // Using clientX/Y is more reliable with getBoundingClientRect()
+        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    };
 
-        glass.style.backgroundImage = "url('" + img.src + "')";
-        glass.style.backgroundRepeat = "no-repeat";
-        glass.style.backgroundSize = (img.naturalWidth * zoom) + "px " + (img.naturalHeight * zoom) + "px";
+    const moveMagnifier = (e) => {
+        const pos = getCursorPos(e);
+        const bgX = -(pos.x / img.offsetWidth * img.naturalWidth * zoom - magnifier.offsetWidth / 2);
+        const bgY = -(pos.y / img.offsetHeight * img.naturalHeight * zoom - magnifier.offsetHeight / 2);
+        magnifier.style.backgroundPosition = `${bgX}px ${bgY}px`;
+    };
 
-        const glassWidth = glass.offsetWidth / 2;
+    const showMagnifier = (e) => {
+        magnifier.style.backgroundImage = `url('${img.src}')`;
+        magnifier.style.backgroundSize = `${img.naturalWidth * zoom}px ${img.naturalHeight * zoom}px`;
+        magnifier.style.display = 'block';
+        moveMagnifier(e); // Set initial position
+    };
+    
+    const hideMagnifier = () => {
+        magnifier.style.display = 'none';
+    };
+    
+    containerEl.addEventListener("mouseenter", showMagnifier);
+    containerEl.addEventListener("mousemove", moveMagnifier);
+    containerEl.addEventListener("mouseleave", hideMagnifier);
 
-        const moveMagnifier = (e) => {
-            e.preventDefault();
-            const pos = getCursorPos(e);
-            let x = pos.x;
-            let y = pos.y;
-
-            const imgRect = img.getBoundingClientRect();
-            const containerRect = containerEl.getBoundingClientRect();
-            
-            const imgLeft = imgRect.left - containerRect.left;
-            const imgTop = imgRect.top - containerRect.top;
-
-            if (x < imgLeft) x = imgLeft;
-            if (x > imgLeft + img.offsetWidth) x = imgLeft + img.offsetWidth;
-            if (y < imgTop) y = imgTop;
-            if (y > imgTop + img.offsetHeight) y = imgTop + img.offsetHeight;
-
-            glass.style.left = (x - glassWidth) + "px";
-            glass.style.top = (y - glassWidth) + "px";
-
-            const bgX = ((x - imgLeft) / img.offsetWidth * img.naturalWidth * zoom) - glassWidth;
-            const bgY = ((y - imgTop) / img.offsetHeight * img.naturalHeight * zoom) - glassWidth;
-
-            glass.style.backgroundPosition = `-${bgX}px -${bgY}px`;
-        };
-        
-        const getCursorPos = (e) => {
-            const a = containerEl.getBoundingClientRect();
-            return {
-                x: e.pageX - a.left - window.scrollX,
-                y: e.pageY - a.top - window.scrollY
-            };
-        };
-        
-        const showMagnifier = () => { glass.style.display = 'block'; };
-        const hideMagnifier = () => { glass.style.display = 'none'; };
-
-        containerEl.addEventListener("mousemove", moveMagnifier);
-        containerEl.addEventListener("mouseenter", showMagnifier);
-        containerEl.addEventListener("mouseleave", hideMagnifier);
-
-        const destroy = () => {
-            containerEl.removeEventListener("mousemove", moveMagnifier);
+    containerEl.magnifierInstance = {
+        destroy: () => {
             containerEl.removeEventListener("mouseenter", showMagnifier);
+            containerEl.removeEventListener("mousemove", moveMagnifier);
             containerEl.removeEventListener("mouseleave", hideMagnifier);
-            if (glass.parentElement) {
-                glass.parentElement.removeChild(glass);
-            }
-        };
-
-        containerEl.magnifierInstance = { destroy };
-    }
+            magnifier.style.display = 'none';
+        }
+    };
+}
 
 
-    $(document).ready(function () {
-        const checksheetTable = $('#CorrectiveActionTable').DataTable({
-            processing: true,
-            serverSide: true,
-            ajax: { 
-                url: '<?= base_url('corrective_action/getPending') ?>', 
-                type: 'POST' 
-            },
-            responsive: {
-                details: {
-                    type: 'column',
-                    target: 'tr'
-                }
-            },
-            columns: [
-                { data: 'checksheet_id' }, 
-                { data: 'area_name' }, 
-                { data: 'building_name' },
-                { data: 'item_name' }, 
-                { data: 'findings' }, 
-                { data: 'status' },
-                { data: 'actions', orderable: false, searchable: false }
-            ],
-            order: [[0, 'desc']],
-            columnDefs: [
-                {
-                    className: 'dtr-control',
-                    orderable: false,
-                    targets: 0
-                },
-                { 
-                    targets: 5, 
-                    render: function(data, type, row) {
-                        if (row.priority == 1) {
-                            return '<span class="badge bg-danger">HIGH PRIORITY</span>';
-                        } else {
-                            return '<span class="badge bg-danger">NG</span>';
-                        }
-                    } 
-                },
-                { 
-                    targets: 6, 
-                    render: function(data, type, row) {
-                        return `<button type="button" class="btn btn-sm btn-primary" onclick="reviewRequest(${row.data_id}, ${row.item_id})">Take an Action</button>`;
-                    } 
-                }
-            ]
-        });
-
-        
-        $('#actionForm').on('submit', function(e) {
-            e.preventDefault();
-            $.ajax({
-                url: '<?= base_url('corrective_action/submitAction') ?>', type: 'POST',
-                data: new FormData(this), processData: false, contentType: false, dataType: 'json',
-                success: function(response) {
-                    if (response.success) {
-                        $('#actionModal').modal('hide');
-                        Swal.fire('Success!', response.message, 'success');
-                        checksheetTable.ajax.reload();
-                    } else { 
-                        Swal.fire('Error!', response.message, 'error');
+$(document).ready(function () {
+    const checksheetTable = $('#CorrectiveActionTable').DataTable({
+        processing: true,
+        serverSide: true,
+        ajax: { 
+            url: '<?= base_url('corrective_action/getPending') ?>', 
+            type: 'POST' 
+        },
+        responsive: { details: { type: 'column', target: 'tr' } },
+        columns: [
+            { data: 'checksheet_id' }, 
+            { data: 'area_name' }, 
+            { data: 'building_name' },
+            { data: 'item_name' }, 
+            { data: 'findings' }, 
+            { data: 'status' },
+            { data: 'actions', orderable: false, searchable: false }
+        ],
+        order: [[0, 'desc']],
+        columnDefs: [
+            { className: 'dtr-control', orderable: false, targets: 0 },
+            {
+                targets: 5,
+                render: function (data, type, row) {
+                    let statusBadge = '';
+                    if (row.status == 0) {
+                        statusBadge = '<span class="badge bg-danger">NG</span>';
+                    } else if (row.status == 3) {
+                        statusBadge = '<span class="badge bg-warning text-dark">NG HOLD</span>';
+                    } else {
+                        statusBadge = '<span class="badge bg-secondary">N/A</span>';
                     }
-                },
-                error: () => {
-                    Swal.fire('Error!', 'An unexpected error occurred.', 'error');
+
+                    let priorityBadge = '';
+                    if (row.priority == 1) {
+                        priorityBadge = ' <span class="badge bg-danger">HIGH PRIORITY</span>';
+                    }
+                    
+                    return statusBadge + priorityBadge;
                 }
-            });
-        });
-
-        $('#actionImageContainer').on('click', function() {
-            if ($(this).hasClass('placeholder')) {
-                $('#actionImage').click();
+            },
+            { 
+                targets: 6, 
+                render: function(data, type, row) {
+                    return `<button type="button" class="btn btn-sm btn-primary" onclick="reviewRequest(${row.data_id}, ${row.item_id})">Take an Action</button>`;
+                } 
             }
+        ]
+    });
+
+    $('#actionForm').on('submit', function(e) {
+        e.preventDefault();
+        const $btn = $(this).find('button[type="submit"]');
+        const formData = new FormData(this);
+        
+        $btn.prop('disabled', true).text('Submitting...');
+        $.ajax({
+            url: '<?= base_url('corrective_action/submitAction') ?>', type: 'POST',
+            data: formData, processData: false, contentType: false, dataType: 'json',
+            success: function(response) {
+                if (response.success) {
+                    $('#actionModal').modal('hide');
+                    Swal.fire('Success!', response.message, 'success');
+                    checksheetTable.ajax.reload();
+                } else { 
+                    Swal.fire('Error!', response.message || 'An error occurred.', 'error');
+                }
+            },
+            error: () => Swal.fire('Error!', 'An unexpected error occurred.', 'error'),
+            complete: () => $btn.prop('disabled', false).text('Submit Action')
         });
+    });
 
-        $('#actionImage').on('change', function() {
-            const file = this.files[0];
-            const imageContainer = $('#actionImageContainer');
-            imageContainer.html('<span class="text-muted" style="color: #ccc;">Loading...</span>');
-            
-            imageContainer.removeClass('placeholder');
+    $('#actionImageContainer').on('click', () => $('#actionImage').click());
 
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
+    $('#actionImage').on('change', function() {
+        const file = this.files[0];
+        const imageContainer = $('#actionImageContainer');
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = () => {
+                    imageContainer.empty().append(img).removeClass('placeholder');
+                    // Ensure any previous magnifier instance is destroyed before creating a new one
+                    if (imageContainer.get(0).magnifierInstance) {
+                        imageContainer.get(0).magnifierInstance.destroy();
+                    }
+                    createMagnifier(imageContainer.get(0), 0.5);
+                };
+                img.src = e.target.result;
+            }
+            reader.readAsDataURL(file);
+        }
+    });
+    
+    $('#holdToggle').on('change', function() {
+        const isChecked = $(this).is(':checked');
+        $('#closureDate').prop('disabled', !isChecked);
+        $('#isHold').val(isChecked ? '1' : '0');
+    });
+
+    $('#actionModal').on('hidden.bs.modal', function () {
+        $('#actionForm')[0].reset();
+        $('#holdToggle').prop('checked', false).prop('disabled', false).trigger('change');
+        
+        const findingContainer = document.getElementById('findingImageContainer');
+        const actionContainer = document.getElementById('actionImageContainer');
+
+        // Destroy magnifier instances to prevent memory leaks
+        if (findingContainer.magnifierInstance) findingContainer.magnifierInstance.destroy();
+        if (actionContainer.magnifierInstance) actionContainer.magnifierInstance.destroy();
+        
+        $(findingContainer).empty();
+        $(actionContainer).addClass('placeholder').html('<span class="text-muted" style="color: #ccc; font-size: 0.9rem;">Click to select an image</span>');
+    });
+});
+
+function reviewRequest(dataId, itemId) {
+    $.ajax({
+        url: `<?= base_url('corrective_action/getItemDetails/') ?>${dataId}/${itemId}`,
+        type: 'GET', dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                const data = response.data;
+                $('#modalBuilding').text(data.building_name);
+                $('#modalArea').text(data.area_name);
+                $('#modalItem').text(data.item_name);
+                $('#modalSubControl').text(data.sub_control || 'N/A');
+                $('#modalFindings').text(data.findings || 'N/A');
+
+                $('#modalDataId').val(dataId);
+                $('#modalItemId').val(itemId);
+
+                // Logic for previously held items
+                if (data.status == 3) {
+                    if (data.action_description) {
+                        $('#actionDescription').val(data.action_description);
+                    }
+                    if (data.declared_closure_date) {
+                        $('#closureDate').val(data.declared_closure_date);
+                        $('#holdToggle').prop('checked', true).prop('disabled', true);
+                        $('#closureDate').prop('disabled', true);
+                        $('#isHold').val('1');
+                    }
+                }
+
+                const imageContainer = $('#findingImageContainer');
+                if (data.finding_image) {
                     const img = new Image();
                     img.onload = function() {
                         imageContainer.empty().append(img);
-                        createMagnifier(imageContainer.get(0), 1.5);
+                        // Ensure previous instance is destroyed
+                        if (imageContainer.get(0).magnifierInstance) {
+                            imageContainer.get(0).magnifierInstance.destroy();
+                        }
+                        createMagnifier(imageContainer.get(0), 0.5);
                     };
-                    img.id = 'modalActionImage';
-                    img.src = e.target.result;
+                    img.src = data.finding_image;
+                } else {
+                    imageContainer.html('<p class="text-muted">No image provided.</p>');
                 }
-                reader.readAsDataURL(file);
-            } else {
-                imageContainer.addClass('placeholder');
-                imageContainer.html('<span class="text-muted" style="color: #ccc; font-size: 0.9rem;">Click to select an image</span>');
+                
+                $('#actionModal').modal('show');
+            } else { 
+                Swal.fire('Error!', response.message, 'error'); 
             }
-        });
-
-        $('#actionModal').on('hidden.bs.modal', function () {
-            $('#actionForm')[0].reset();
-
-            const findingContainer = document.getElementById('findingImageContainer');
-            const actionContainer = document.getElementById('actionImageContainer');
-
-            if (findingContainer && findingContainer.magnifierInstance) {
-                findingContainer.magnifierInstance.destroy();
-            }
-            if (actionContainer && actionContainer.magnifierInstance) {
-                actionContainer.magnifierInstance.destroy();
-            }
-            
-            $(findingContainer).empty();
-            $(actionContainer)
-                .addClass('placeholder')
-                .html('<span class="text-muted" style="color: #ccc; font-size: 0.9rem;">Click to select an image</span>');
-        });
+        },
+        error: () => {
+            Swal.fire('Error!', 'Failed to load details.', 'error');
+        }
     });
-    
-    function reviewRequest(dataId, itemId) {
-        $.ajax({
-            url: `<?= base_url('corrective_action/getItemDetails/') ?>${dataId}/${itemId}`,
-            type: 'GET', dataType: 'json',
-            success: function(response) {
-                if (response.success) {
-                    const data = response.data;
-                    $('#modalBuilding').text(data.building_name);
-                    $('#modalArea').text(data.area_name);
-                    $('#modalItem').text(data.item_name);
-                    $('#modalSubControl').text(data.sub_control || 'N/A');
-                    $('#modalFindings').text(data.findings || 'N/A');
-
-                    $('#modalDataId').val(dataId);
-                    $('#modalItemId').val(itemId);
-
-                    const imageContainer = $('#findingImageContainer');
-                    imageContainer.html('<span class="text-muted" style="color: #ccc;">Loading...</span>');
-
-                    if (data.finding_image) {
-                        const img = new Image();
-                        img.onload = function() {
-                            imageContainer.empty().append(img);
-                            createMagnifier(imageContainer.get(0), 1.5);
-                        };
-                        img.id = 'modalFindingImage';
-                        img.src = data.finding_image;
-                    } else {
-                        imageContainer.html('<p class="text-muted">No image provided.</p>');
-                    }
-                    
-                    $('#actionModal').modal('show');
-                } else { 
-                    Swal.fire('Error!', response.message, 'error'); 
-                }
-            },
-            error: () => {
-                Swal.fire('Error!', 'Failed to load details.', 'error');
-            }
-        });
-    }
+}
 </script>

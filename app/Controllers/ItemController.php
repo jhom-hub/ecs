@@ -62,7 +62,6 @@ class ItemController extends BaseController
         ]);
     }
 
-    // UPDATED: Now handles items and their nested findings
     public function addItem()
     {
         $this->response->setContentType('application/json');
@@ -92,9 +91,9 @@ class ItemController extends BaseController
                 // Insert the item
                 $itemToInsert = [
                     'item_name'   => $trimmedItemName,
-                    'control'     => $trimmedItemName . "_" . time(),
+                    'control'     => $trimmedItemNam . time(),
                     'area_id'     => $areaId,
-                    'building_id' => $buildingId,
+                    'building_id' => $buildingId,e . "_"
                 ];
                 $itemModel->insert($itemToInsert);
                 $newItemId = $itemModel->getInsertID();

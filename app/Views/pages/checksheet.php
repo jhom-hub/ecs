@@ -1,5 +1,11 @@
+<style>
+    .swal-topmost {
+    z-index: 99999 !important; /* higher than any of your modals */
+}
+
+</style>
 <div class="row">
-    <div class="col-lg-8 mb-3">
+    <div class="col-lg-12 mb-3">
         <div class="card mb-3">
             <div class="card-header align-items-center">
                 <h4 class="card-title mb-0">Checksheets</h4>
@@ -12,6 +18,7 @@
                                 <th>ID</th>
                                 <th>Area</th>
                                 <th>Building</th>
+                                <th>Hi-Prio Count</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
@@ -19,14 +26,6 @@
                         <tbody></tbody>
                     </table>
                 </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-4 inboxContainer overflow-hidden">
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title">Incoming Item Request</h5>
-                <div id="requestItemsContainer" style="max-height: 500px; overflow-y: auto;"></div>
             </div>
         </div>
     </div>
@@ -92,7 +91,7 @@
                             </tr>
                         </thead>
                         <tbody id="reviewItemsContainer">
-                            </tbody>
+                        </tbody>
                     </table>
                 </div>
             </div>
@@ -105,7 +104,7 @@
 
 
 <script>
-$(document).ready(function () {
+$(document).ready(function() {
     loadRequestItems();
 
     const checksheetTable = $('#ChecksheetTable').DataTable({
@@ -115,53 +114,61 @@ $(document).ready(function () {
             url: '<?= base_url('checksheet/getAll') ?>',
             type: 'POST'
         },
-        columns: [
-            { data: 'checksheet_id' },
-            { data: 'area_name' },
-            { data: 'building_name' },
-            { data: 'status' },
-            { data: 'actions', orderable: false, searchable: false }
+        columns: [{
+            data: 'checksheet_id'
+        }, {
+            data: 'area_name'
+        }, {
+            data: 'building_name'
+        }, {
+            data: 'priority_count'
+        }, {
+            data: 'status'
+        }, {
+            data: 'actions',
+            orderable: false,
+            searchable: false
+        }],
+        order: [
+            [0, 'desc']
         ],
-        order: [[0, 'desc']],
         responsive: {
             details: {
                 type: 'column',
                 target: 'tr'
             }
         },
-        columnDefs: [
-            {
-                className: 'dtr-control', 
-                orderable: false,
-                targets: 0
-            },
-            {
-                targets: 3,
-                render: function(data, type, row) {
-                    switch (data) {
-                        case '0': return '<span class="badge bg-danger">Pending</span>';
-                        case '1': return '<span class="badge bg-success">Checked</span>';
-                        case '2': return '<span class="badge bg-primary">Action Taken</span>';
-                        default: return '<span class="badge bg-secondary">Unknown</span>';
-                    }
-                }
-            },
-            {
-                targets: 4,
-                render: function(data, type, row) {
-                    if (row.status == '0') {
-                        return `<button type="button" class="btn btn-sm btn-primary" onclick="viewRequest(${row.checksheet_id})">View</button>`;
-                    } else if (row.status == '1') {
-                        return `<button type="button" class="btn btn-sm btn-secondary" onclick="reviewRequest(${row.checksheet_id})">Review</button>`;
-                    } else {
-                        return `<button type="button" class="btn btn-sm btn-secondary" onclick="reviewRequest(${row.checksheet_id})">Review</button>`;
-                    }
+        columnDefs: [{
+            className: 'dtr-control',
+            orderable: false,
+            targets: 0
+        }, {
+            targets: 4,
+            render: function(data, type, row) {
+                switch (data) {
+                    case '0':
+                        return '<span class="badge bg-danger">Pending</span>';
+                    case '1':
+                        return '<span class="badge bg-success">Checked</span>';
+                    case '2':
+                        return '<span class="badge bg-primary">Action Taken</span>';
+                    default:
+                        return '<span class="badge bg-secondary">Unknown</span>';
                 }
             }
-        ]
+        }, {
+            targets: 5,
+            render: function(data, type, row) {
+                if (row.status == '0') {
+                    return `<button type="button" class="btn btn-sm btn-primary" onclick="viewRequest(${row.checksheet_id})">View</button>`;
+                } else {
+                    return `<button type="button" class="btn btn-sm btn-secondary" onclick="reviewRequest(${row.checksheet_id})">Review</button>`;
+                }
+            }
+        }]
     });
 
-    $('#checksheetForm').submit(function (e) {
+    $('#checksheetForm').submit(function(e) {
         e.preventDefault();
         if ($('#findingsRowsContainer .row-item').length === 0) {
             Swal.fire('Empty Form!', 'Please add at least one item row before saving.', 'warning');
@@ -178,19 +185,19 @@ $(document).ready(function () {
             processData: false,
             contentType: false,
             dataType: 'json',
-            success: function (res) {
+            success: function(res) {
                 if (res.status === 'success') {
                     Swal.fire('Success!', res.message, 'success');
                     $('#checksheetModal').modal('hide');
-                    checksheetTable.ajax.reload(); 
+                    checksheetTable.ajax.reload();
                 } else {
                     Swal.fire('Error!', res.message || 'An error occurred.', 'error');
                 }
             },
-            error: function (xhr) {
+            error: function(xhr) {
                 Swal.fire('Request Failed!', xhr.responseJSON ? xhr.responseJSON.message : 'An unknown error occurred.', 'error');
             },
-            complete: function () {
+            complete: function() {
                 $btn.prop('disabled', false).text('Save Entry');
             }
         });
@@ -205,7 +212,6 @@ $(document).ready(function () {
         const hiddenControlField = row.find('.control-hidden-field');
         const subControlField = row.find('.sub-control-field');
         const judgementToggle = row.find('.judgement-toggle');
-        const priorityToggle = row.find('.priority-toggle');
         const isJudgementOK = judgementToggle.is(':checked');
 
         hiddenControlField.val(controlValue);
@@ -217,17 +223,13 @@ $(document).ready(function () {
             subControlField.val('');
         }
 
-        const areaName = $('#checksheetDetailsContainer').data('area-name');
-        const firstControl = $('#findingsRowsContainer .control-hidden-field[value!=""]').first().val();
-        $('#modalTitle').text(`Checksheet Viewer - ${areaName}` + (firstControl ? ` (${firstControl})` : ''));
-
         if (!itemId) {
-            findingsDropdown.html('').prop('disabled', true).trigger('change'); // Notify Select2
+            findingsDropdown.html('').prop('disabled', true).trigger('change');
             return;
         }
 
         findingsDropdown.html('').prop('disabled', true);
-        
+
         $.ajax({
             url: `<?= base_url('checksheet/getFindingsByItem') ?>/${itemId}`,
             type: 'GET',
@@ -244,7 +246,7 @@ $(document).ready(function () {
                 if (!isJudgementOK) {
                     findingsDropdown.prop('disabled', false);
                 }
-                findingsDropdown.trigger('change'); 
+                findingsDropdown.trigger('change');
             },
             error: function() {
                 findingsDropdown.html('').trigger('change');
@@ -265,7 +267,7 @@ $(document).ready(function () {
         if (isChecked) {
             label.text('OK').removeClass('text-danger').addClass('text-success');
             hiddenInput.val(1);
-            findingsDropdown.prop('disabled', true).val(null).trigger('change'); 
+            findingsDropdown.prop('disabled', true).val(null).trigger('change');
             driDropdown.prop('disabled', true).val('');
             remarksInput.prop('disabled', true).val('');
             const fileInput = imageUploadContainer.find('.finding-image-input');
@@ -289,7 +291,6 @@ $(document).ready(function () {
         const isChecked = $(this).is(':checked');
         const row = $(this).closest('.row-item');
         const hiddenInput = row.find('input[type="hidden"][name="priority[]"]');
-
         hiddenInput.val(isChecked ? 1 : 0);
     });
 
@@ -304,7 +305,7 @@ $(document).ready(function () {
         const container = $(this).closest('.image-upload-container');
         const previewContainer = container.find('.image-preview-container');
         const fileInputLabel = container.find('.file-input-label');
-        
+
         if (input.files && input.files[0]) {
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -316,86 +317,26 @@ $(document).ready(function () {
         }
     });
 
-    // Handles removing the image preview and showing the 'Attach' button again
     $('#checksheetDetailsContainer').on('click', '.remove-image-btn', function() {
         const container = $(this).closest('.image-upload-container');
         const previewContainer = container.find('.image-preview-container');
         const fileInputLabel = container.find('.file-input-label');
         const fileInput = container.find('.finding-image-input');
-
-        // Clear the file input's value so it's not submitted
         fileInput.val('');
-        
-        // Hide the preview and show the attach button
         previewContainer.hide();
         fileInputLabel.show();
     });
 });
 
-function viewRequest(id) {
-    $.ajax({
-        url: `<?= base_url('checksheet/getDropdownData') ?>/${id}`,
-        type: 'GET',
-        dataType: 'json',
-        success: function(response) {
-            if (response.status !== 'success') {
-                Swal.fire('Error!', 'Could not load data for the checksheet.', 'error');
-                return;
-            }
-            const items = response.data.items;
-            const dris = response.data.dris;
-            const areaName = response.data.area_name;
-            const detailsContainer = $('#checksheetDetailsContainer');
-            detailsContainer.data('area-name', areaName);
-            detailsContainer.empty();
-            const formHtml = `
-                <div class="table-responsive">
-                    <table class="table table-sm">
-                        <thead>
-                            <tr>
-                                <th style="width: 15%;">Item</th>
-                                <th style="width: 15%;">Sub-control</th>
-                                <th style="width: 10%;">Judgement</th>
-                                <th style="width: 20%;">Findings</th>
-                                <th style="width: 10%;">Image</th>
-                                <th style="width: 15%;">DRI</th>
-                                <th style="width: 15%;">Remarks</th>
-                                <th style="width: 5%;"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="findingsRowsContainer"></tbody>
-                    </table>
-                </div>
-                <div class="mt-2">
-                    <button type="button" class="btn btn-success btn-sm" id="addRowBtn">
-                        <i class='bx bx-plus'></i> Add Row
-                    </button>
-                </div>
-            `;
-            detailsContainer.html(formHtml);
-            addRow(items, dris);
-            detailsContainer.off('click', '#addRowBtn').on('click', '#addRowBtn', function() {
-                addRow(items, dris);
-            });
-            $('#modalTitle').text(`Checksheet Viewer - ${areaName}`);
-            $('#checksheet_id').val(id);
-            $('#checksheetModal').modal('show');
-        },
-        error: function() {
-            Swal.fire('Error!', 'Failed to fetch initial checksheet data.', 'error');
-        }
-    });
-}
-
 function addRow(items = [], dris = []) {
     const rowsContainer = $('#findingsRowsContainer');
     const rowIndex = rowsContainer.children('tr').length;
 
-    let itemOptions = items.map(item => 
+    let itemOptions = items.map(item =>
         `<option value="${item.item_id}" data-control="${item.control || ''}">${item.item_name}</option>`
     ).join('');
-    
-    let driOptions = dris.map(dri => 
+
+    let driOptions = dris.map(dri =>
         `<option value="${dri.department_id}">${dri.department_name}</option>`
     ).join('');
 
@@ -426,14 +367,7 @@ function addRow(items = [], dris = []) {
                 <div class="image-upload-container">
                     <label class="btn btn-sm btn-outline-secondary file-input-label w-100">
                         <i class='bx bx-paperclip'></i> Attach
-                        <input 
-                            type="file" 
-                            class="finding-image-input" 
-                            name="finding_image[]" 
-                            accept="image/*" 
-                            capture="environment" 
-                            style="display: none;"
-                        >
+                        <input type="file" class="finding-image-input" name="finding_image[]" accept="image/png, image/jpeg, image/jpg" capture="environment" style="display: none;">
                     </label>
                     <div class="image-preview-container align-items-center" style="display: none;">
                         <img src="" alt="Preview" class="img-thumbnail me-2" style="max-width: 80px; max-height: 40px;">
@@ -453,7 +387,7 @@ function addRow(items = [], dris = []) {
             <td>
                 <div class="form-check form-switch d-flex justify-content-center">
                     <input class="form-check-input priority-toggle" type="checkbox" role="switch">
-                    <input type="hidden" name="priority[]">
+                    <input type="hidden" name="priority[]" value="0">
                 </div>
             </td>
             <td class="text-end">
@@ -463,140 +397,140 @@ function addRow(items = [], dris = []) {
             </td>
         </tr>
     `;
-    
+
     const newRow = $(newRowHtml).appendTo(rowsContainer);
-    
+
     newRow.find('.findings-select').select2({
         theme: 'bootstrap-5',
         width: '100%',
         placeholder: 'Select item first...',
-        dropdownParent: $('#checksheetModal') // Important for search to work in a modal
+        dropdownParent: $('#checksheetModal')
     });
 
     newRow.find('.judgement-toggle').trigger('change');
 }
 
 function loadRequestItems() {
-        $.ajax({
-            url: '<?= base_url('checksheet/getPendingRequests') ?>',
-            type: 'GET',
-            dataType: 'json',
-            success: function(response) {
-                const container = $('#requestItemsContainer');
-                container.empty(); 
+    $.ajax({
+        url: '<?= base_url('checksheet/getPendingRequests') ?>',
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            const container = $('#requestItemsContainer');
+            container.empty();
 
-                if (response.status === 'success' && response.data.length > 0) {
-                    response.data.forEach(function(item) {
-                        const itemHtml = `
-                            <div class="messages mb-1 p-3 shadow-sm rounded">
-                                <p class="card-text mb-1"><strong>${item.area_name}</strong></p>
-                                <p class="card-text mb-1">${item.item_name}</p>
-                                <p class="card-text mb-1">${item.description}</p><br>
-                                <span class="justify-content-between d-flex">
-                                    <div class="icons">
-                                        <button type="button" class="btn btn-primary btn-sm" onclick="approveRequest(${item.request_id})">
-                                            <i class='bx bx-check'></i>
-                                        </button>
-                                        <button type="button" class="btn btn-danger btn-sm" onclick="rejectRequest(${item.request_id})">
-                                            <i class='bx bx-x'></i>
-                                        </button>
-                                    </div>
-                                    <h1 style="font-size: 10pt !important;">${item.firstname} ${item.lastname}</h1>
-                                </span>
-                            </div>
-                        `;
-                        container.append(itemHtml);
-                    });
-                } else {
-                    container.html('<p class="text-center text-muted p-3">No incoming item requests.</p>');
-                }
-            },
-            error: function() {
-                const container = $('#requestItemsContainer');
-                container.html('<p class="text-center text-danger p-3">Failed to load requests.</p>');
-            }
-        });
-    }
-
-    function approveRequest(id) {
-        Swal.fire({
-            title: 'Approve Request',
-            text: "Are you sure you want to approve this item request?",
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#3085d6',
-            cancelButtonColor: '#d33',
-            confirmButtonText: 'Yes, approve it!'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                $.ajax({
-                    url: '<?= base_url('checksheet/updateRequestStatus') ?>',
-                    type: 'POST',
-                    data: {
-                        request_id: id,
-                        status: 1,
-                        '<?= csrf_token() ?>': '<?= csrf_hash() ?>' // CSRF Protection
-                    },
-                    dataType: 'json',
-                    success: function(res) {
-                        if (res.status === 'success') {
-                            Swal.fire('Approved!', res.message, 'success');
-                            loadRequestItems(); // Refresh the list to remove the approved item
-                        } else {
-                            Swal.fire('Error!', res.message || 'Request failed.', 'error');
-                        }
-                    },
-                    error: function(xhr) {
-                        Swal.fire('Error!', xhr.responseJSON ? xhr.responseJSON.message : 'An unknown error occurred.', 'error');
-                    }
+            if (response.status === 'success' && response.data.length > 0) {
+                response.data.forEach(function(item) {
+                    const itemHtml = `
+                        <div class="messages mb-1 p-3 shadow-sm rounded">
+                            <p class="card-text mb-1"><strong>${item.area_name}</strong></p>
+                            <p class="card-text mb-1">${item.item_name}</p>
+                            <p class="card-text mb-1">${item.description}</p><br>
+                            <span class="justify-content-between d-flex">
+                                <div class="icons">
+                                    <button type="button" class="btn btn-primary btn-sm" onclick="approveRequest(${item.request_id})">
+                                        <i class='bx bx-check'></i>
+                                    </button>
+                                    <button type="button" class="btn btn-danger btn-sm" onclick="rejectRequest(${item.request_id})">
+                                        <i class='bx bx-x'></i>
+                                    </button>
+                                </div>
+                                <h1 style="font-size: 10pt !important;">${item.firstname} ${item.lastname}</h1>
+                            </span>
+                        </div>
+                    `;
+                    container.append(itemHtml);
                 });
+            } else {
+                container.html('<p class="text-center text-muted p-3">No incoming item requests.</p>');
             }
-        });
-    }
+        },
+        error: function() {
+            const container = $('#requestItemsContainer');
+            container.html('<p class="text-center text-danger p-3">Failed to load requests.</p>');
+        }
+    });
+}
 
-    function rejectRequest(id) {
-        Swal.fire({
-            title: 'Reject Request',
-            text: 'Please provide a reason for rejection:',
-            icon: 'warning',
-            input: 'textarea',
-            inputPlaceholder: 'Type your reason here...',
-            showCancelButton: true,
-            confirmButtonColor: '#d33',
-            cancelButtonColor: '#3085d6',
-            confirmButtonText: 'Yes, reject it!',
-            inputValidator: (value) => {
-                if (!value) {
-                    return 'You need to write a reason for rejection!'
-                }
-            }
-        }).then((result) => {
-            if (result.isConfirmed) {
-                $.ajax({
-                    url: '<?= base_url('checksheet/updateRequestStatus') ?>',
-                    type: 'POST',
-                    data: {
-                        request_id: id,
-                        status: 2, // 2 for Rejected
-                        remarks: result.value, // Get remarks from the Swal input
-                        '<?= csrf_token() ?>': '<?= csrf_hash() ?>' // CSRF Protection
-                    },
-                    dataType: 'json',
-                    success: function(res) {
-                        if (res.status === 'success') {
-                            Swal.fire('Rejected!', res.message, 'success');
-                            loadRequestItems(); // Refresh the list to remove the rejected item
-                        } else {
-                            Swal.fire('Error!', res.message || 'Request failed.', 'error');
-                        }
-                    },
-                    error: function(xhr) {
-                        Swal.fire('Error!', xhr.responseJSON ? xhr.responseJSON.message : 'An unknown error occurred.', 'error');
+function approveRequest(id) {
+    Swal.fire({
+        title: 'Approve Request',
+        text: "Are you sure you want to approve this item request?",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Yes, approve it!'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            $.ajax({
+                url: '<?= base_url('checksheet/updateRequestStatus') ?>',
+                type: 'POST',
+                data: {
+                    request_id: id,
+                    status: 1,
+                    '<?= csrf_token() ?>': '<?= csrf_hash() ?>'
+                },
+                dataType: 'json',
+                success: function(res) {
+                    if (res.status === 'success') {
+                        Swal.fire('Approved!', res.message, 'success');
+                        loadRequestItems();
+                    } else {
+                        Swal.fire('Error!', res.message || 'Request failed.', 'error');
                     }
-                });
+                },
+                error: function(xhr) {
+                    Swal.fire('Error!', xhr.responseJSON ? xhr.responseJSON.message : 'An unknown error occurred.', 'error');
+                }
+            });
+        }
+    });
+}
+
+function rejectRequest(id) {
+    Swal.fire({
+        title: 'Reject Request',
+        text: 'Please provide a reason for rejection:',
+        icon: 'warning',
+        input: 'textarea',
+        inputPlaceholder: 'Type your reason here...',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Yes, reject it!',
+        inputValidator: (value) => {
+            if (!value) {
+                return 'You need to write a reason for rejection!'
             }
-        });
-    }
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            $.ajax({
+                url: '<?= base_url('checksheet/updateRequestStatus') ?>',
+                type: 'POST',
+                data: {
+                    request_id: id,
+                    status: 2,
+                    remarks: result.value,
+                    '<?= csrf_token() ?>': '<?= csrf_hash() ?>'
+                },
+                dataType: 'json',
+                success: function(res) {
+                    if (res.status === 'success') {
+                        Swal.fire('Rejected!', res.message, 'success');
+                        loadRequestItems();
+                    } else {
+                        Swal.fire('Error!', res.message || 'Request failed.', 'error');
+                    }
+                },
+                error: function(xhr) {
+                    Swal.fire('Error!', xhr.responseJSON ? xhr.responseJSON.message : 'An unknown error occurred.', 'error');
+                }
+            });
+        }
+    });
+}
 
 function viewRequest(id) {
     $.ajax({
@@ -609,15 +543,12 @@ function viewRequest(id) {
                 return;
             }
 
-            // --- FIX IS HERE ---
             const items = response.data.items;
-            const dris = response.data.dris; // This line was missing
+            const dris = response.data.dris;
             const areaName = response.data.area_name;
-            // --- END FIX ---
-
             const detailsContainer = $('#checksheetDetailsContainer');
             detailsContainer.data('area-name', areaName);
-            detailsContainer.empty(); // This prevents content from duplicating on second view
+            detailsContainer.empty();
 
             const formHtml = `
                 <div class="table-responsive">
@@ -635,8 +566,7 @@ function viewRequest(id) {
                                 <th style="width: 5%;"></th>
                             </tr>
                         </thead>
-                        <tbody id="findingsRowsContainer">
-                        </tbody>
+                        <tbody id="findingsRowsContainer"></tbody>
                     </table>
                 </div>
                 <div class="mt-2">
@@ -650,11 +580,27 @@ function viewRequest(id) {
             addRow(items, dris);
 
             detailsContainer.off('click', '#addRowBtn').on('click', '#addRowBtn', function() {
+                const rowsContainer = $('#findingsRowsContainer');
+                const lastRow = rowsContainer.find('tr.row-item:last');
+
+                if (lastRow.length > 0) {
+                    const itemSelect = lastRow.find('.item-select');
+                    if (!itemSelect.val()) { 
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Cannot Add Row',
+                            text: 'Please select an item in the current row before adding a new one.',
+                            customClass: {
+                                container: 'swal-topmost'
+                            }
+                        });
+                        return; 
+                    }
+                }
                 addRow(items, dris);
             });
 
-            // Show the modal
-            $('#modalTitle').text(`Checksheet Viewer - ${areaName}`);
+            $('#modalTitle').text(`Checksheet Form - ${areaName}`);
             $('#checksheet_id').val(id);
             $('#checksheetModal').modal('show');
         },
@@ -687,17 +633,17 @@ function reviewRequest(id) {
 
             if (items.length > 0) {
                 items.forEach(item => {
-                    const judgementBadge = item.status == '2' 
-                        ? '<span class="badge bg-success">OK</span>' 
-                        : '<span class="badge bg-danger">NG</span>';
+                    const judgementBadge = item.status == '2' ?
+                        '<span class="badge bg-success">OK</span>' :
+                        '<span class="badge bg-danger">NG</span>';
 
-                    const findingImageHtml = item.finding_image 
-                        ? `<a href="${item.finding_image}" target="_blank"><img src="${item.finding_image}" class="img-thumbnail" style="width: 80px; height: 60px; object-fit: cover;"></a>`
-                        : 'N/A';
-                        
-                    const actionImageHtml = item.action_image 
-                        ? `<a href="${item.action_image}" target="_blank"><img src="${item.action_image}" class="img-thumbnail" style="width: 80px; height: 60px; object-fit: cover;"></a>`
-                        : 'N/A';
+                    const findingImageHtml = item.finding_image ?
+                        `<a href="${item.finding_image}" target="_blank"><img src="${item.finding_image}" class="img-thumbnail" style="width: 80px; height: 60px; object-fit: cover;"></a>` :
+                        'N/A';
+
+                    const actionImageHtml = item.action_image ?
+                        `<a href="${item.action_image}" target="_blank"><img src="${item.action_image}" class="img-thumbnail" style="width: 80px; height: 60px; object-fit: cover;"></a>` :
+                        'N/A';
 
                     const rowHtml = `
                         <tr>
@@ -717,7 +663,7 @@ function reviewRequest(id) {
             } else {
                 itemsContainer.html('<tr><td colspan="9" class="text-center">No items found for this checksheet.</td></tr>');
             }
-            
+
             $('#reviewModal').modal('show');
         },
         error: function() {

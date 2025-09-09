@@ -124,27 +124,27 @@ class DashboardController extends BaseController
         $db = \Config\Database::connect();
 
         $sql = "
-        SELECT 
-            a.area_name,
-            cd.finding_image,
-            GROUP_CONCAT(ft.findings_name ORDER BY ft.findings_id SEPARATOR ', ') AS findings_names
-        FROM checksheet_data AS cd
-        LEFT JOIN area AS a 
-            ON a.area_id = cd.area_id
-        LEFT JOIN item AS i 
-            ON i.item_id = cd.item_id
-        CROSS JOIN JSON_TABLE(
-            cd.findings_id,
-            '$[*]' COLUMNS (
-                findings_id VARCHAR(10) PATH '$'
-            )
-        ) AS exploded
-        LEFT JOIN findings_type AS ft 
-            ON ft.findings_id = exploded.findings_id
-        WHERE a.status = 'NG'
-          AND cd.area_id = ?
-        GROUP BY a.area_name, cd.finding_image
-    ";
+            SELECT 
+                a.area_name,
+                cd.finding_image,
+                GROUP_CONCAT(ft.findings_name ORDER BY ft.findings_id SEPARATOR ', ') AS findings_names
+            FROM checksheet_data AS cd
+            LEFT JOIN area AS a 
+                ON a.area_id = cd.area_id
+            LEFT JOIN item AS i 
+                ON i.item_id = cd.item_id
+            CROSS JOIN JSON_TABLE(
+                cd.findings_id,
+                '$[*]' COLUMNS (
+                    findings_id VARCHAR(10) PATH '$'
+                )
+            ) AS exploded
+            LEFT JOIN findings_type AS ft 
+                ON ft.findings_id = exploded.findings_id
+            WHERE a.status = 'NG'
+            AND cd.area_id = ?
+            GROUP BY a.area_name, cd.finding_image
+        ";
 
         $result = $db->query($sql, [$areaId])->getRow();
 
@@ -203,6 +203,67 @@ class DashboardController extends BaseController
         }
 
         return $this->response->setJSON($results);
+    }
+
+    public function getItemsDetails()
+    {
+        $db = \Config\Database::connect();
+        $request = service('request');
+
+        $draw = $request->getPost('draw');
+        $start = $request->getPost('start');
+        $length = $request->getPost('length');
+        $search = $request->getPost('search')['value'];
+        $order = $request->getPost('order');
+        $itemName = $request->getPost('item_name');
+
+        // Base query
+        $baseBuilder = $db->table('building b')
+            ->select('b.building_name, a.area_name, i.item_name, a.status')
+            ->join('area a', 'b.building_id = a.building_id', 'left')
+            ->join('item i', 'a.area_id = i.area_id', 'left');
+
+        if ($itemName) {
+            $baseBuilder->where('i.item_name', $itemName);
+        }
+
+        // --- Total records
+        $builder = clone $baseBuilder;
+        $totalRecords = $builder->countAllResults();
+
+        // --- Apply search
+        $builder = clone $baseBuilder;
+        if (!empty($search)) {
+            $builder->groupStart()
+                ->like('b.building_name', $search)
+                ->orLike('a.area_name', $search)
+                ->orLike('i.item_name', $search)
+                ->orLike('a.status', $search)
+                ->groupEnd();
+        }
+        $totalFiltered = $builder->countAllResults(false);
+
+        // --- Ordering
+        $columns = ['b.building_name', 'a.area_name', 'i.item_name', 'a.status'];
+        if (!empty($order)) {
+            $colIndex = $order[0]['column'];
+            $colDir = $order[0]['dir'];
+            $builder->orderBy($columns[$colIndex], $colDir);
+        }
+
+        // --- Paging
+        if ($length != -1) {
+            $builder->limit($length, $start);
+        }
+
+        $data = $builder->get()->getResultArray();
+
+        return $this->response->setJSON([
+            "draw" => intval($draw),
+            "recordsTotal" => $totalRecords,
+            "recordsFiltered" => $totalFiltered,
+            "data" => $data
+        ]);
     }
 
 }

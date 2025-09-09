@@ -118,7 +118,7 @@ $(document).ready(function () {
         order: [[0, 'desc']]
     });
 
-    // --- Dependent Dropdown Logic ---
+
     function loadBuildings(callback, buildingSelectId = '#add_building_id, #update_building_id') {
         $.getJSON('<?= base_url('area_maintenance/getBuildingsForDropdown') ?>', function (res) {
             const selects = $(buildingSelectId);
@@ -152,7 +152,7 @@ $(document).ready(function () {
         const itemSelect = $(`#${itemSelectId}`);
         itemSelect.empty().append('<option value="">Loading...</option>');
         if (areaId) {
-            $.getJSON(`<?= base_url('checksheet_maintenance/getItemsByArea/') ?>${areaId}`, function (res) {
+            $.getJSON(`<?= base_url('findings_type_maintenance/getItemsByArea/') ?>${areaId}`, function (res) {
                 itemSelect.empty().append('<option value="">Select Item</option>');
                 if (res.status === 'success') {
                     res.data.forEach(item => itemSelect.append(`<option value="${item.item_id}">${item.item_name}</option>`));

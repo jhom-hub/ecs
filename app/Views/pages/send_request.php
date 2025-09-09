@@ -1,5 +1,5 @@
 <div class="row">
-        <div class="col-lg-8">
+        <div class="col-lg-8 mb-3">
             <div class="card">
                 <div class="card-header">
                     <h4 class="card-title mb-0">Existing Requests</h4>

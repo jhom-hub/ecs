@@ -153,10 +153,10 @@ $user_role = session()->get('role') ?? '';
         <li class="nav-item">
             <a href="#" class="nav-link" data-target=".items">Items</a>
         </li>
-        <li class="nav-item">
+        <!-- <li class="nav-item">
             <a href="<?= base_url('checksheet') ?>" class="nav-link go-checksheet"
                 onclick="window.location=this.href; return true;">Go to checksheet</a>
-        </li>
+        </li> -->
     </ul>
 </div>
 
@@ -176,12 +176,19 @@ $user_role = session()->get('role') ?? '';
     <div class="col-12 col-lg-12 items">
         <div class="card p-3">
             <h4 class="mb-3 itm">Items</h4>
-            <div class="input-group mb-3 w-25">
-                <span class="input-group-text" id="basic-addon1"><i class='bx bx-search'></i> </span>
-                <input type="search" class="form-control w-25" id="searchInput" placeholder="Search item..."
+            <div class="mb-3 d-flex justify-content-between align-items-center">
+                <div class="searching input-group w-25">
+                    <span class="input-group-text" id="basic-addon1"><i class='bx bx-search'></i> </span>
+                    <input type="search" class="form-control w-25" id="searchInput" placeholder="Search item..."
                     aria-label="Search item..." aria-describedby="basic-addon1">
+                </div>
+                <div class="filtering input-group w-25">
+                    <input type="date" name="start_date" id="startDate" class="form-control">
+                    <input type="date" name="end_date" id="endDate" class="form-control">
+                    <button type="button" class="btn btn-primary">Filter</button>
+                </div>
             </div>
-            <div class="row gap-3 d-flex justify-content-center align-items-center" id="itemsContainer"></div>
+            <div class="row gap-3 d-flex justify-content-start align-items-center" id="itemsContainer"></div>
         </div>
     </div>
 
@@ -235,6 +242,30 @@ $user_role = session()->get('role') ?? '';
             </div>
         </div>
     </div> -->
+</div>
+
+<div class="modal fade" id="ngItemModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Item Details: <span id="modalItemName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <table id="itemDetailsTable" class="table table-striped table-bordered w-100">
+                    <thead>
+                        <tr>
+                            <th>Building</th>
+                            <th>Area</th>
+                            <th>Item</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -331,52 +362,57 @@ $user_role = session()->get('role') ?? '';
         });
 
         // Use a delegated event listener for efficiency
-        $(document).on('mouseenter', '.marker', function () {
-            const marker = $(this);
-            const areaId = marker.data('area-id');
+        // Show tooltip on marker click
+$(document).on('click', '.marker', function (e) {
+    e.stopPropagation(); // Prevent click from bubbling up
 
-            // Check if data is already loaded to avoid multiple requests
-            if (marker.data('tooltip-loaded')) {
-                return;
+    const marker = $(this);
+    const areaId = marker.data('area-id');
+
+    // Destroy any existing tooltip first (so only one is visible at a time)
+    $('.marker').tooltip('dispose');
+    $('.marker').data('tooltip-loaded', false);
+
+    // Make an AJAX call to get details
+    $.ajax({
+        url: `<?= base_url('dashboard/area-details/') ?>${areaId}`,
+        type: 'GET',
+        dataType: 'json',
+        success: function (response) {
+            if (response) {
+                const tooltipContent = `
+                    <p><strong>Area:</strong> ${response.area_name}</p>
+                    <p><strong>Findings:</strong> ${response.findings_names}</p>
+                    <p><strong>Findings Image:</strong><br>
+                        <a href="<?= base_url('checksheet') ?>" target="_blank">
+                            <img src="<?= base_url('uploads/findings/') ?>${response.finding_image}" 
+                             alt="Finding Image" style="max-width:200px; border-radius:6px;">
+                        </a>
+                    </p>
+                `;
+
+                marker.tooltip({
+                    html: true,
+                    title: tooltipContent,
+                    placement: 'top',
+                    trigger: 'manual' // Manual trigger (we control show/hide)
+                }).tooltip('show');
+
+                marker.data('tooltip-loaded', true);
             }
+        },
+        error: function (xhr, status, error) {
+            console.error("Error fetching area details:", error);
+        }
+    });
+});
 
-            // Make an AJAX call to the new endpoint
-            $.ajax({
-                url: `<?= base_url('dashboard/area-details/') ?>${areaId}`,
-                type: 'GET',
-                dataType: 'json',
-                // Inside your success function
-                success: function (response) {
-                    if (response) {
-                        // Create the tooltip content dynamically
-                        const tooltipContent = `
-            <p><strong>Area:</strong> ${response.area_name}</p>
-            <p><strong>Findings:</strong> ${response.findings_names}</p>
-            <p><strong>Findings Image:</strong> <img src="<?= base_url('uploads/findings/') ?>${response.finding_image}" alt="Finding Image"></p>
-        `; // Removed max-width: 100px from here
+// Hide tooltip when clicking anywhere else
+$(document).on('click', function () {
+    $('.marker').tooltip('dispose');
+    $('.marker').data('tooltip-loaded', false);
+});
 
-                        // Initialize the tooltip with the dynamic content
-                        marker.attr('title', ''); // Clear existing title
-                        marker.tooltip({
-                            html: true,
-                            title: tooltipContent,
-                            placement: 'top'
-                        }).tooltip('show');
-
-                        // Set a flag to prevent re-fetching
-                        marker.data('tooltip-loaded', true);
-                    }
-                },
-                error: function (xhr, status, error) {
-                    console.error("Error fetching area details:", error);
-                }
-            });
-        });
-
-        // Handle mouseleave to hide the tooltip
-        $(document).on('mouseleave', '.marker', function () {
-            $(this).tooltip('hide');
-        });
 
         // tabs functionality
         const tabs = $('.nav-link');
@@ -470,11 +506,21 @@ $user_role = session()->get('role') ?? '';
 
                     if (items.length > 0) {
                         items.forEach(item => {
-                            const statusText = item.status === 'NG' ? 'NG' : 'OK';
-                            const statusClass = statusText === 'NG' ? 'text-danger' : 'text-success';
+                            const [ngCountStr] = item.ng_ratio.split('/');
+                            const ngCount = parseInt(ngCountStr, 10);
+                            const btnClass = ngCount >= 1 ? 'btn-danger' : 'btn-success';
+
                             const itemHtml = `
                                 <div class="col-3" style="height: 100px;">
-                                    <button type="button" id="ngItem" class="btn btn-success p-3 w-100 shadow" style="width: 50px; height: 100px;" data-bs-toggle="modal" data-bs-target="#ngItem">${item.item_name} ${item.ng_ratio}</button>
+                                    <button type="button"
+                                        id="ngItem"
+                                        class="btn ${btnClass} p-3 w-100 shadow open-item-modal"
+                                        style="width: 50px; height: 100px;"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#ngItemModal"
+                                        data-item="${item.item_name}">
+                                            ${item.item_name}<br>${item.ng_ratio}
+                                    </button>
                                 </div>
                             `;
                             container.append(itemHtml);
@@ -491,5 +537,46 @@ $user_role = session()->get('role') ?? '';
         }
 
         loadItems();
+
+        /* ITEMS DASHBOARD */
+        let itemDetailsTable;
+    
+        $(document).on('click', '.open-item-modal', function(){
+            const itemName = $(this).data('item');
+            $('#modalItemName').text(itemName);
+    
+            if($.fn.DataTable.isDataTable('#itemDetailsTable')){
+                $('#itemDetailsTable').DataTable().destroy();
+            }
+    
+            itemDetailsTable = $('#itemDetailsTable').DataTable({
+                processing: true,
+                serverSide: true,
+                ajax: {
+                    url: '<?= base_url('dashboard/get-items-details') ?>',
+                    type: 'POST',
+                    data: function(d){
+                        d.item_name = itemName;
+                    }
+                },
+                columns: [
+                    { data: 'building_name' },
+                    { data: 'area_name' },
+                    { data: 'item_name' },
+                    {
+                        data: 'status',
+                        render: function(data, type, row){
+                            if(data === 'NG'){
+                                return `<span class="badge bg-danger">${data}</span>`;
+                            }else{
+                                return `<span class="badge bg-success">${data}</span>`;
+                            }
+                        }
+                    },
+                ]
+            });
+        });
+
     });
+
 </script>

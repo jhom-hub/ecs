@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Controllers\BaseController;
 use App\Models\ChecksheetDataModel;
+use App\Models\ChecksheetHoldModel;
 use App\Models\ChecksheetInfoModel;
 
 class CorrectiveActionController extends BaseController
@@ -26,30 +27,22 @@ class CorrectiveActionController extends BaseController
         $currentDate = date('Y-m-d');
 
         $model->select("
-            c.checksheet_id,
-            c.data_id,
-            c.priority,
-            c.item_id,
-            a.area_name,
-            b.building_name,
-            i.item_name,
+            c.checksheet_id, c.data_id, c.priority, c.status, c.item_id,
+            a.area_name, b.building_name, i.item_name,
             GROUP_CONCAT(DISTINCT ft.findings_name SEPARATOR ', ') as findings
         ")
         ->from('checksheet_data c')
         ->join('area a', 'c.area_id = a.area_id', 'left')
         ->join('building b', 'c.building_id = b.building_id', 'left')
         ->join('item i', 'c.item_id = i.item_id', 'left')
-        ->join(
-            "JSON_TABLE(c.findings_id, '$[*]' COLUMNS (fid VARCHAR(20) PATH '$')) AS jt",
-            '1=1',
-            'left'
-        )
+        ->join("JSON_TABLE(c.findings_id, '$[*]' COLUMNS (fid VARCHAR(20) PATH '$')) AS jt", '1=1', 'left')
         ->join('findings_type ft', 'ft.findings_id = jt.fid', 'left')
-        ->where('c.status', 0)
+        ->whereIn('c.status', [0, 3])
+        ->where('c.dri_id', $userId)
         ->where('c.submitted_date', $currentDate)
-        ->groupBy('c.data_id, c.checksheet_id, a.area_name, b.building_name, i.item_name')
+        ->groupBy('c.data_id')
         ->orderBy('c.priority', 'desc');
-        
+
         $totalRecordsBuilder = clone $model->builder();
         $totalRecords = $totalRecordsBuilder->countAllResults(false);
 
@@ -63,7 +56,7 @@ class CorrectiveActionController extends BaseController
 
         $totalRecordsWithFilterBuilder = clone $model->builder();
         $totalRecordsWithFilter = $totalRecordsWithFilterBuilder->countAllResults(false);
-        
+
         $model->orderBy($orderColumn, $order['dir']);
         $records = $model->findAll($limit, $start);
 
@@ -72,13 +65,13 @@ class CorrectiveActionController extends BaseController
             $data[] = [
                 "checksheet_id" => $row['checksheet_id'],
                 "data_id"       => $row['data_id'],
-                "priority"       => $row['priority'],
+                "priority"      => (int)($row['priority'] ?? 0),
                 "item_id"       => $row['item_id'],
                 "area_name"     => htmlspecialchars($row['area_name']),
                 "building_name" => htmlspecialchars($row['building_name']),
                 "item_name"     => htmlspecialchars($row['item_name']),
                 "findings"      => !empty($row['findings']) ? htmlspecialchars($row['findings']) : 'No Findings Recorded',
-                "status"        => '<span class="badge bg-danger">NG</span>'
+                "status"        => (int)($row['status'] ?? 0)
             ];
         }
 
@@ -94,7 +87,6 @@ class CorrectiveActionController extends BaseController
     public function getItemDetails($dataId, $itemId)
     {
         $db = \Config\Database::connect();
-
         $mainBuilder = $db->table('checksheet_data c');
         $mainBuilder->select('c.*, a.area_name, b.building_name, i.item_name');
         $mainBuilder->join('area a', 'c.area_id = a.area_id', 'left');
@@ -106,11 +98,21 @@ class CorrectiveActionController extends BaseController
         if (!$mainRecord) {
             return $this->response->setJSON(['success' => false, 'message' => 'Details not found.']);
         }
+        
+        if ($mainRecord && $mainRecord['status'] == 3) {
+            $holdModel = new ChecksheetHoldModel();
+            $holdRecord = $holdModel->where('data_id', $dataId)
+                                    ->orderBy('hold_id', 'DESC')
+                                    ->first();
 
-        // Step 2: Get the finding names based on the JSON array of IDs from the record.
+            if ($holdRecord) {
+                $mainRecord['action_description'] = $holdRecord['action_description'];
+                $mainRecord['declared_closure_date'] = $holdRecord['declared_closure_date'];
+            }
+        }
+
         $findings_ids = json_decode($mainRecord['findings_id'] ?? '[]', true);
         $findings_names = [];
-
         if (is_array($findings_ids) && !empty($findings_ids)) {
             $findingsBuilder = $db->table('findings_type');
             $findingsBuilder->select('findings_name');
@@ -120,8 +122,6 @@ class CorrectiveActionController extends BaseController
                 $findings_names[] = $row['findings_name'];
             }
         }
-
-        // Step 3: Combine the results and prepare the final data object for the response.
         $mainRecord['findings'] = !empty($findings_names) ? implode(', ', $findings_names) : 'N/A';
         
         if (!empty($mainRecord['finding_image'])) {
@@ -133,59 +133,78 @@ class CorrectiveActionController extends BaseController
 
     public function submitAction()
     {
-        $dataId      = $this->request->getPost('data_id');
-        $itemId      = $this->request->getPost('item_id');
-        $description = $this->request->getPost('action_description');
-        $imageFile   = $this->request->getFile('action_image');
-        $currentDate = date('mdY');
-        
         $checksheetDataModel = new ChecksheetDataModel();
+        $validation = \Config\Services::validation();
+
+        $dataId = $this->request->getPost('data_id');
+        $itemId = $this->request->getPost('item_id');
+        $description = $this->request->getPost('action_description');
+        $closureDate = $this->request->getPost('closure_date');
+        $imageFile = $this->request->getFile('action_image');
+        $request = $this->request;
+        $session = session();
+        $userId = $session->get('user_id');
+        
+        $imageIsProvided = ($imageFile && $imageFile->isValid());
+
         $record = $checksheetDataModel->find($dataId);
         if (!$record) {
              return $this->response->setJSON(['success' => false, 'message' => 'Original record not found.']);
         }
         $checksheetId = $record['checksheet_id'];
-
-        $imageName = null;
-        if ($imageFile && $imageFile->isValid() && !$imageFile->hasMoved()) {
-            $extension = $imageFile->getExtension();
-            $imageName = $currentDate . '_' . $itemId . '_' . $checksheetId . '.' . $extension;
-            $imageFile->move(FCPATH . 'uploads/actions', $imageName);
-        }
-
-        $dataToUpdate = [
-            'status'             => 2,
-            'action_description' => $description,
-            'action_image'       => $imageName
-        ];
         
-        $updated = $checksheetDataModel->update($dataId, $dataToUpdate);
+        if ($imageIsProvided) {
+            $currentDate = date('mdY');
+            $extension = $imageFile->getExtension();
+            $imageName = $currentDate . '_' . $userId . '_' . time() . '.' . $extension;
+            $imageFile->move(FCPATH . 'uploads/actions', $imageName);
 
-        if ($updated) {
-            $currentDate = date('Y-m-d');
-            $remainingItems = $checksheetDataModel->where('checksheet_id', $checksheetId)
-                                    ->where('submitted_date', $currentDate)
-                                    ->where('status !=', 2)
-                                    ->countAllResults();
-            if ($remainingItems === 0) {
-                $infoModel = new \App\Models\ChecksheetInfoModel();
-                $infoModel->where('checksheet_id', $checksheetId)
-                        ->set(['status' => 2])
-                        ->update();
-                $checksheet = $infoModel->where('checksheet_id', $checksheetId)->first();
-                if ($checksheet && isset($checksheet['area_id'])) {
-                    $areaId = $checksheet['area_id'];
+            $dataToUpdate = [
+                'status'             => 2,
+                'action_description' => $description,
+                'action_image'       => $imageName
+            ];
+        
+            if ($checksheetDataModel->update($dataId, $dataToUpdate)) {
+                $currentSubmitDate = date('Y-m-d');
+                $remainingItems = $checksheetDataModel->where('checksheet_id', $checksheetId)
+                                        ->where('submitted_date', $currentSubmitDate)
+                                        ->whereIn('status', [0, 3])
+                                        ->countAllResults();
 
-                    $areaModel = new \App\Models\AreaModel();
-                    $areaModel->where('area_id', $areaId)
-                            ->set(['status' => 'OK'])
-                            ->update();
+                if ($remainingItems === 0) {
+                    $infoModel = new ChecksheetInfoModel();
+                    $infoModel->update($checksheetId, ['status' => 2]);
+                    $holdModel = new ChecksheetHoldModel();
+                    $holdModel->update($dataId, ['status' => 1]);
+                    
+                    $checksheet = $infoModel->find($checksheetId);
+                    if ($checksheet && isset($checksheet['area_id'])) {
+                        $areaModel = new \App\Models\AreaModel();
+                        $areaModel->update($checksheet['area_id'], ['status' => 'OK']);
+                    }
+                } else {
+                    $holdModel = new ChecksheetHoldModel();
+                    $holdModel->update($dataId, ['status' => 1]);
                 }
+                return $this->response->setJSON(['success' => true, 'message' => 'Corrective action submitted successfully!']);
+            } else {
+                return $this->response->setJSON(['success' => false, 'message' => 'Failed to update the database.']);
             }
 
-            return $this->response->setJSON(['success' => true, 'message' => 'Corrective action submitted successfully!']);
         } else {
-            return $this->response->setJSON(['success' => false, 'message' => 'Failed to update the database.']);
+            $holdModel = new ChecksheetHoldModel();
+            $dataToHold = [
+                'data_id'               => $dataId,
+                'status'               => 0,
+                'action_description'    => $description,
+                'declared_closure_date' => !empty($closureDate) ? $closureDate : null
+            ];
+            $holdModel->insert($dataToHold);
+
+            $checksheetDataModel->update($dataId, ['status' => 3]);
+            
+            return $this->response->setJSON(['success' => true, 'message' => 'Action logged and put on hold successfully!']);
         }
     }
 }
